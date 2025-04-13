@@ -1,0 +1,1608 @@
+---
+title: "RecapCap1"
+output:
+  word_document: default
+  pdf_document: default
+date: "2023-12-27"
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Apprendimento statistico - MASTRANTONIO
+
+## METODI SIMULATIVI
+
+Si scrivono di seguito paccehetti utili per svolgere i calcoli su $R$.
+
+```{r}
+library(datasets)
+library(catdata)
+library(dslabs)
+library(mvtnorm)
+library(patchwork)
+library(paletteer)
+library(tidyverse)
+```
+
+#### PLOT DENSITA', CUMULATA, QUANTILE E CAMPIONE DALLA NORMALE
+
+Si definisca $X \sim N(\mu, \sigma^2)$. In R la normale è chiamata
+*"norm"*, inoltre 1. La funzione che calcola la densità si chiama
+**rnorm()** 2. La funzione che calcola la cumulata è **pnorm()** 3. La
+funzione che calcola il quantile è **qnorm()** 4. La funzione che estrae
+un campion è **rnorm()**
+
+Trovato negli script ma mai spiegato (vedere in generale).
+
+```{r}
+z_scores <- seq(-4, 4, by = 0.01)
+mu <- 0
+sd <- 1
+# Functions
+# Using `dnorm` and `pnorm` to setup the "skeleton" of related plots.
+normal_dists <- list(`dnorm()` = ~ dnorm(., mu, sd),
+`rnorm()` = ~ dnorm(., mu, sd),
+`pnorm()` = ~ pnorm(., mu, sd),
+`qnorm()` = ~ pnorm(., mu, sd))
+# Apply functions to data and parameter combinations
+df <- tibble(z_scores, mu, sd) %>%
+mutate_at(.vars = vars(z_scores), .funs = normal_dists) %>%
+# "Lengthen" the data
+pivot_longer(cols = -c(z_scores, mu, sd), names_to = "func",
+values_to = "prob") %>%
+# Categorize based on shape of distribution -- need to split up the dataframe
+# for plotting later.
+mutate(distribution = ifelse(func == "pnorm()" | func == "qnorm()",
+"Cumulative probability", "Probability density"))
+# Split up the data into different pieces that can then be added to a plot.
+# Probabilitiy density distrubitions
+df_pdf <- df %>%
+filter(distribution == "Probability density") %>%
+rename(`Probabilitiy density` = prob)
+# Cumulative density distributions
+df_cdf <- df %>%
+filter(distribution == "Cumulative probability") %>%
+rename(`Cumulative probability` = prob)
+# dnorm segments
+# Need to make lines that represent examples of how values are mapped -- there
+# is probably a better way to do this, but quick and dirty is fine for now.
+df_dnorm <- tibble(z_start.line_1 = c(-1.5, -0.75, 0.5),
+pd_start.line_1 = 0) %>%
+mutate(z_end.line_1 = z_start.line_1,
+pd_end.line_1 = dnorm(z_end.line_1, mu, sd),
+z_start.line_2 = z_end.line_1,
+pd_start.line_2 = pd_end.line_1,
+z_end.line_2 = min(z_scores),
+pd_end.line_2 = pd_start.line_2,
+id = 1:n()) %>%
+pivot_longer(-id) %>%
+separate(name, into = c("source", "line"), sep = "\\.") %>%
+pivot_wider(id_cols = c(id, line), names_from = source) %>%
+mutate(func = "dnorm()",
+size = ifelse(line == "line_1", 0, 0.03))
+# rnorm segments
+# Make it reproducible
+set.seed(20200209)
+df_rnorm <- tibble(z_start = rnorm(10, mu, sd)) %>%
+mutate(pd_start = dnorm(z_start, mu, sd),
+z_end = z_start,
+pd_end = 0,
+func = "rnorm()")
+# pnorm segments
+df_pnorm <- tibble(z_start.line_1 = c(-1.5, -0.75, 0.5),
+pd_start.line_1 = 0) %>%
+mutate(z_end.line_1 = z_start.line_1,
+pd_end.line_1 = pnorm(z_end.line_1, mu, sd),
+z_start.line_2 = z_end.line_1,
+pd_start.line_2 = pd_end.line_1,
+z_end.line_2 = min(z_scores),
+pd_end.line_2 = pd_start.line_2,
+id = 1:n()) %>%
+pivot_longer(-id) %>%
+separate(name, into = c("source", "line"), sep = "\\.") %>%
+pivot_wider(id_cols = c(id, line), names_from = source) %>%
+mutate(func = "pnorm()",
+size = ifelse(line == "line_1", 0, 0.03))
+# qnorm segments
+df_qnorm <- tibble(z_start.line_1 = min(z_scores),
+pd_start.line_1 = c(0.1, 0.45, 0.85)) %>%
+mutate(z_end.line_1 = qnorm(pd_start.line_1),
+pd_end.line_1 = pd_start.line_1,
+z_start.line_2 = z_end.line_1,
+pd_start.line_2 = pd_end.line_1,
+z_end.line_2 = z_end.line_1,
+pd_end.line_2 = 0,
+id = 1:n()) %>%
+pivot_longer(-id) %>%
+separate(name, into = c("source", "line"), sep = "\\.") %>%
+pivot_wider(id_cols = c(id, line), names_from = source) %>%
+mutate(func = "qnorm()",
+size = ifelse(line == "line_1", 0, 0.03))
+cp <- paletteer_d("ggsci::default_locuszoom", 4, )
+names(cp) <- c("dnorm()", "rnorm()", "pnorm()", "qnorm()")
+# Probabilitiy density
+p_pdf <- df_pdf %>%
+ggplot(aes(z_scores, `Probabilitiy density`)) +
+geom_segment(data = df_dnorm,
+aes(z_start, pd_start, xend = z_end, yend = pd_end),
+arrow = arrow(length = unit(df_dnorm$size, "npc"), type = "closed"),
+size = 0.8, color = cp["dnorm()"]) +
+geom_segment(data = df_rnorm,
+aes(z_start, pd_start, xend = z_end, yend = pd_end),
+arrow = arrow(length = unit(0.03, "npc"), type = "closed"),
+size = 0.8, color = cp["rnorm()"]) +
+geom_line(size = 0.6) +
+facet_wrap(~ func, nrow = 1) +
+theme_bw() +
+theme(panel.grid = element_blank(),
+axis.title.x = element_blank(),
+strip.background = element_blank(),
+text = element_text(family = "serif", size = 14)) +
+scale_y_continuous(expand = expand_scale(c(0, 0.05))) +
+scale_x_continuous(expand = c(0.01, 0))
+# Cumulative probability
+p_cdf <- df_cdf %>%
+ggplot(aes(z_scores, `Cumulative probability`)) +
+geom_hline(yintercept = 0, color = "grey") +
+geom_segment(data = df_pnorm,
+aes(z_start, pd_start, xend = z_end, yend = pd_end),
+arrow = arrow(length = unit(df_dnorm$size, "npc"), type = "closed"),
+size = 0.8, color = cp["pnorm()"]) +
+geom_segment(data = df_qnorm,
+aes(z_start, pd_start, xend = z_end, yend = pd_end),
+arrow = arrow(length = unit(df_qnorm$size, "npc"), type = "closed"),
+size = 0.8, color = cp["qnorm()"]) +
+geom_line(size = 0.6) +
+facet_wrap(~ func, nrow = 1) +
+labs(x = "z-score/quantiles") +
+theme_bw() +
+theme(panel.grid = element_blank(),
+strip.background = element_blank(),
+text = element_text(family = "serif", size = 14)) +
+scale_x_continuous(expand = c(0.01, 0))
+# Combine the plots
+p_pdf + p_cdf + plot_layout(ncol = 1)
+```
+
+Stessa cosa vale per altre distribuzioni, per esempio la Poisson è
+dpois(), ppois(), dpois() e rpois(). Si chiama dpois anche se in realtà
+calcola la probabilità e non la densità.
+
+#### NUMERI PSEUDO CASUALI: Simulazione da uniformi - seed
+
+Dall'esempio sottostante si può notare che nei primi due casi in cui si
+setta il seme, *seed*, i numeri "casuali" generati risultano essere gli
+stessi. Invece, nella terza prova i risultati sono differenti.
+
+```{r}
+set.seed(100) # Setta il seme
+s1 = runif(10, 0, 1) # Simulo un campione dalla v.a. uniforme U(0,1)
+set.seed(100) # Setta lo stesso seme
+s2 = runif(10, 0, 1) # Simulo nuovamente un campione dalla v.a. uniforme
+```
+
+```{r}
+s3 = runif(10, 0, 1) # Simulo un campione dalla v.a. uniforme
+```
+
+```{r}
+t(s1) # t() traspone il vettore s1
+t(s2)
+t(s3)
+```
+
+#### SIMULAZIONE DA UNA UNIFORME
+
+Simuliamo da una $U(0,1)$, con seme 10.
+
+```{r}
+set.seed(10)
+x = runif(3,0,1)
+x
+set.seed(10)
+runif(3, 0,1)
+```
+
+Implementiamo la funzione per la simulazione di un uniforme $U(0,1)$.
+
+```{r}
+r_unif01 = function(n, seed, m = 100, c=2, a =4 ){
+
+    ret = rep(NA,n)
+
+    val_prec = seed
+    for(i in 1:n)
+    {
+        ret[i] = (a * val_prec + c) %% m 
+        val_prec = ret[i]
+    }
+    ret = ret/m
+
+    return(ret)
+
+}
+```
+
+Facciamo dei test
+
+```{r}
+x1 = r_unif01(n = 10000, seed = 0, m = 1000, c=3, a =5 )
+x1[1:25]
+plot(x1)
+```
+
+Si vede facilmente che è la simulazione entra in loop, continuando a
+generare sempre gli stessi valori. Proviamo ad ovviare il problema.
+
+```{r}
+x1 = r_unif01(n = 10000, seed = 0, m = 10000000, c=3.7, a =5.3 )
+x1[1:25]
+par(mfrow = c(1,2))
+plot(x1)
+hist(x1)
+```
+
+#### UN ESEMPIO DI GENERATORE PSEUDO CASUALE
+
+Otteniamo un generatore pseudo casuale $U(0,1)$ creando le variabili
+$$d_i=(ad_{i-1}+c) \ mod \ m$$ dove $0 \le c \le m$ è l'incremento e
+$0 < a < m$ è il moltiplicatore. Dopo si prende $u_i=\frac{d_i}m$.
+
+Una volta implementata la funzione **gen_pseudo_casuale_uniforme**
+facciamo due test: 1. Inseriamo valori interi e plottiamo: entra in un
+loop e genera sempre gli stessi numeri. 2. Inseriamo valori non interi e
+plottiamo: si può vedere che tutti i numeri generati sono differenti.
+
+```{r}
+# Definizione della funzione
+gen_pseudo_U = function(n, seed, m = 100, c = 2, a = 4){
+
+    u_i = rep(NA,n) # Replica il valore (NA) per n volte creando un array
+    val_prec = seed # Alla 1° iter. setto il valore prec. come il seme
+
+    for(i in 1:n){
+        # Applico la formula con %% il modulo
+        u_i[i] = (a * val_prec + c) %% m 
+        val_prec = u_i[i] # Aggiorno il d_i-1
+    }
+
+    u_i = u_i / m # Applica la formula per prendere gli "u_i"
+    return(u_i)
+}
+
+# Chiamo la funzione per vedere il risultato
+x = gen_pseudo_U(n = 10000, seed = 0, m = 1000, c = 3, a = 5) 
+# x per stampare il risultato
+```
+
+```{r}
+# "Test"
+# Generatore con interi che entra in loop
+x1 = gen_pseudo_U(n = 10000, seed = 0, m = 1000, c = 3, a = 5 ) 
+# Generatore che non entra in loop
+x2 = gen_pseudo_U(n = 10000, seed = 0, m = 10000000, c = 3.7, a = 5.3 ) 
+# per il momento lascio così, imparerò a farli più piccoli
+par(mfrow=c(1,3)) 
+plot(x1)
+plot(x2)
+hist(x2)
+```
+
+#### STIMA DI DENSITA': SIMULAZIONI DA $\Gamma(5,1)$
+
+Alle volte abbiamo dei campioni di cui non conosciamo la densità.
+Facciamo quindi un esempio.
+
+La funzione **density** dà la stima della densità del campione di input.
+
+```{r}
+x = rgamma(100, 5, 1) # simulo 100 osservazioni
+par(mfrow=c(1,2))
+plot(x) # vedo i dati simulati
+plot(density(x)) # vedo una possibile funione di densità dei dati
+```
+
+Per calcolare la stima di densità è necessario avere un kernel.
+Prendiamo un kernel normal $\phi(x;\mu, \sigma^2)$. La stima di densità
+$\hat{f}$ in $x$, la definisco come
+$\hat{f}(x) = \frac{\sum_{i=1}^n \phi(x_i;x, \sigma^2)}{n}$.
+
+Simuliamo dalle gamma, e confrontiamo la stima con la densità vera.
+
+```{r}
+x = rgamma(10000,5,1)
+
+plot(density(x))
+xseq = seq(0,15, by=0.1)
+lines(xseq, dgamma(xseq, 5,1), col=2)
+```
+
+#### Marginali e congiunte: SIMULO DUE VARIABILI CHE POSSONO ASSUEMRE VALORI IN $[1,5]$.
+
+```{r}
+K = 5
+probmat = matrix(runif(K^2, 0,1), nrow=K, ncol=K)
+# Matrice di probabilità 5x5
+probmat = probmat/sum(probmat)
+probmat
+```
+
+```{r}
+# Simuliamo nsim simulazioni
+nsim = 10000
+# rowSums(probmat) somma tutti i valori di probabilità sulle righe
+# Otteniamo così nsim campioni da x1
+x1 = sample(1:K, nsim, prob = rowSums(probmat), replace=T)
+
+# Simuliamo ora dalla condizionata usando la formula di Bayes
+# f(x2 = j | x1 = i) = f(x2 = j, x1 = i) / f(x1 = i)
+x2 = rep(NA, nsim)
+for(i in 1:nsim){
+x2[i] = sample(1:K, 1, prob = probmat[x1[i], ]/sum(probmat[x1[i], ]), replace=T)
+}
+# Affianco in colonna x1 e x2
+conti = matrix(0, nrow=K, ncol=K)
+# "Conti" è la matrice dei conteggi che mi dice quanto spesso esce una 
+# determinata combinazione
+for(i in 1:nsim){
+conti[x1[i], x2[i]] = conti[x1[i], x2[i]] + 1
+}
+conti/nsim # Matrice 5x5
+probmat # Matrice 5x5
+```
+
+#### CALCOLO $\pi$
+
+```{r}
+x <- seq(0,1, by = 0.01)
+y <- sqrt(1-x^2) # calcola la circonferenza nel primo quadrante
+plot(x,y, type="l")
+# creo una scatola [0,1]x[0,1]
+abline(v = 0)
+abline(v = 1)
+abline(h = 1)
+abline(h = 0)
+nsim <- 10000
+coord1 <- runif(nsim, 0,1)
+coord2 <- runif(nsim, 0,1)
+points(coord1,coord2, pch = 20, col = c(1,2)[ (coord1^2+ coord2^2 <= 1) +1])
+```
+
+Avendo tanti campioni casuali, mi aspetto che la probabilità di
+selezionare un punto e vedere che è sotto la curva (cioè nella zona
+rossa) è la proporzione di quanta area è presenta nella zona rossa e
+quanta nella zona nera.
+
+Contiamo i punti dentro al cerchio.
+
+```{r}
+punti_in_cerchio <- sum( (coord1^2+ coord2^2 <= 1))/nsim*4
+punti_in_cerchio
+```
+
+L'obbiettivo è calcolare $\pi$ approssimando il numero di punti dentro
+la circonferenza. Aumentando le iterazioni il valore di $\pi$ migliorerà
+sempre di più, infatti per la legge dei grandi numeri la media
+dell'integrale tende all'area dell'oggetto studiato.
+
+```{r}
+stima_n <- rep(NA, nsim)
+stima_n[1] <- 0
+
+for(i in 2:nsim){
+    stima_n[i] <- sum( (coord1[1:i]^2 + coord2[1:i]^2 <= 1))/i*4
+}
+plot(stima_n, lwd = 2, type = "l", xlim = c(2000, 10000))
+abline(h = pi)
+```
+
+#### ESEMPIO DI ACCEPT-REJECT
+
+Questo codice esegue la simulazione di campioni da una distribuzione
+beta e ne visualizza i risultati attraverso un grafico. Cioè il codice
+mostra la generazione e la visualizzazione di campioni da una
+distribuzione beta e fornisce un confronto visivo tra la distribuzione
+originale e i campioni generati.
+
+```{r}
+# parametri della distribuzione beta
+para <- 3 
+parb <- 1.2
+
+# calcoliamo il massimo
+moda <- (para - 1) / (para + parb - 2) # moda della distribuzione
+m <- dbeta (moda, para, parb) # densità in corrispondenza della moda
+
+# generazione di due vettori casuali Y e U con 10000 campioni ciascuno
+# da una distribuzione uniforme tra 0 e 1
+n <- 10000 # numero di campioni
+Y <- runif (n, 0, 1)
+U <- runif (n, 0, m)
+
+# Viene filtrato il vettore Y mantenendo solo i valori per i quali 
+# U è minore della densità di probabilità calcolata in precedenza 
+# Vengono creati vettori U_X e X contenenti rispettivamente 
+# i valori di U e X corrispondenti al filtro applicato:
+# U < dbeta (Y,para , parb )
+X <- Y[U < dbeta(Y, para, parb)]
+U_X <- U[U < dbeta(Y, para, parb)]
+
+# grafico della densità di probabilità della distribuzione beta
+# vengono evidenziati i punti che soddisfano il filtro con un 
+# colore diverso e viene tracciata la densità stimata di X
+xseq = seq(0, 1, by = 0.01)
+plot(xseq , dbeta(xseq, para, parb), ylim = c(0,m),
+     type ="l", lwd =2, )
+points(Y,U, pch = 20 , cex = 0.1)
+points(X,U_X, pch = 20 , cex = 0.1, col = 2)
+lines(density(X, from = 0, to = 1), col =2, lwd =2)
+```
+
+#### ESEMPI DI $\beta$ E DELLE SCATOLE
+
+Si creano due grafici per illustrare la densità di probabilità di due
+distribuzioni beta diverse. Il codice visualizza graficamente le
+funzioni di densità di probabilità di due distribuzioni beta diverse e
+identifica il massimo valore della PDF per ognuna di esse.
+
+```{r}
+# xseq è utilizzato come sequenza di valori per valutare le funzioni di densità 
+# di probabilità (PDF) delle distribuzioni beta
+xseq <- seq(0, 1, by = 0.01)
+
+# fx è la PDF della distribuzione beta con parametri 1.2 e 1.2 
+# calcolata per la sequenza di valori in xseq
+fx <- dbeta(xseq, 1.2, 1.2)
+
+# si calcola il massimo valore della PDF
+m <- max(fx)
+
+par(mfrow = c(1,2))
+# PDF della distribuzione beta con parametri 1.2 e 1.2
+plot(xseq, fx, type = "l")
+# la linea orizzontale in rosso rappresenta il massimo valore della PDF
+abline(h = m, col = 2)
+
+# PDF della distribuzione beta con parametri 20 e 20
+fx = dbeta(xseq, 20, 20)
+# il suo massimo
+m <- max(fx)
+
+# PDF della distribuzione beta con parametri 20 e 20
+# e la linea orizzontale colorata in rosso rappresenta 
+# il massimo valore della PDF
+plot(xseq, fx, type="l")
+abline(h = m, col = 2)
+```
+
+#### COSTANTI DI NORMALIZZAZIONE: ESEMPI DI KERNEL
+
+```{r}
+xseq = seq(-3,3, by=0.01)
+
+par(mfrow=c(2,2))
+plot(xseq, dnorm(xseq, 0,1), type="l")
+plot(xseq, 10*exp(-0.5*xseq^2), type="l")
+plot(xseq, 20*exp(-0.5*xseq^2), type="l")
+plot(xseq, 0.1*exp(-0.5*xseq^2), type="l")
+```
+
+#### KERNEL E DENSITA' NORMALE
+
+Il codice genera un grafico che visualizza una densità di probabilità
+complessa e la confronta con la densità di probabilità di una
+distribuzione normale standard moltiplicata per 12.
+
+```{r}
+xseq = seq(-pi, pi, by = 0.01) # Crea una sequenza di valori da -pi a pi con un passo di 0.01
+# Calcola i valori della densità di probabilità in base a una funzione data
+dens = exp(-xseq^2/2)*(sin(6*xseq)^2+3*cos(xseq)^2*sin(4*xseq)^2+1)
+# Crea un grafico della densità di probabilità
+plot (
+  xseq, dens, type = "l", ylim = c(0,5),
+  lwd = 3, xlab = "x", ylab = "density"
+)
+# Sovrapponi al grafico precedente una curva che rappresenta la densità di probabilità di una distribuzione normale standard (con media 0 e deviazione standard 1), moltiplicata per 12.
+lines(xseq, 12*dnorm(xseq), col = 2, lwd = 3)
+```
+
+#### ESEMPIO APPROSSIMAZIONE MONTE CARLO
+
+Ipotizziamo che $Y \sim Exp(\lambda)$ e $X|Y=y \sim G(exp,1)$. Ci
+chiediamo com'è fatta la densità marg di $X$? Questo è un caso in cui
+non possiamo dire nulla riguardo la distribuzione ma possiamo usare
+l'approssimazione MC.
+
+Il codice esegue una stima della densità di probabilità condizionata di
+X, dato un campione estratto da una distribuzione esponenziale, e quindi
+produce un grafico della stima.
+
+```{r}
+n = 1000 # Imposta la dimensione del campione casuale da estrarre dalla distribuzione esponenziale
+a = seq(0, 10, by = 0.1) # Questi sono i valori di x su cui verrà calcolata la stima della densità
+lambda = 2 # Imposta il parametro lambda per la distribuzione esponenziale
+fx_stima = c() # Crea un vettore vuoto fx_stima che verrà utilizzato per immagazzinare le stime della densità di probabilità
+# Genera un campione casuale di dimensione n da una distribuzione esponenziale con parametro lambda.
+y = rexp (n, lambda )
+# Ciclo for per calcolare la stima della densità di probabilità per ogni valore in a
+for (i in 1: length (a)){
+  # Calcola la densità di probabilità condizionata di a[i] dato il campione y estratto dalla distribuzione esponenziale
+  fzgiveny = dgamma (a[i], exp (y) ,1)
+  # Calcola la stima della densità di probabilità di X nel punto a[i] come la media delle densità di probabilità condizionate calcolate sopra
+  fx_stima[i] = sum ( fzgiveny )/n
+}
+plot(a, fx_stima) # Crea un grafico della stima della densità di probabilità in funzione di a
+lines(a, fx_stima, col = 2) # Sovrapponi al grafico precedente una linea della stima della densità di probabilità
+```
+
+#### DIMOSTRAZIONE NUMERICA LGN
+
+Calcoliamo la media di $log(x)$ con $X \sim G(1,5)$ La calcoliamo come
+$$
+\frac{\sum_{i=1}^n log(x_i)}{n} \approx \int_{R^+} log(x) f(x) dx
+$$
+
+Il codice fornisce una stima della media dei logaritmi dei valori di un
+campione estratto da una distribuzione $G(1,5)$.
+
+```{r}
+n = 10000 # Dimensione del campione casuale
+# Genera un campione casuale di dimensione n da una distribuzione gamma con forma 1 e tasso (rate) 5. La funzione rgamma restituisce valori casuali da una distribuzione gamma
+x = rgamma(n, 1, rate = 5)
+sum(log(x))/n
+mean(log(x)) # Calcola la media dei logaritmi degli elementi nel campione
+```
+
+"Dimostriamo" la legge dei grandi numeri, numericamente. Assumiamo
+$X \sim G(1,1)$. Io so che la media è 1.
+
+Il codice genera un grafico della media cumulativa di un campione
+casuale di dimensione 10000 estratto da una distribuzione $G(1,1)$.
+Viene anche sovrapposta una linea orizzontale a $y = 1$ per evidenziarne
+il confronto.
+
+```{r}
+n = 10000
+# Imposta il seme del generatore di numeri casuali per garantire la riproducibilità dei risultati
+set.seed(190)
+x = rgamma(n,1,1)
+# Calcola la media cumulativa dei valori nel campione
+# cumsum(x) restituisce la somma cumulativa degli elementi di x, e poi ogni valore è diviso per il numero corrispondente nella sequenza da 1 a n
+h = cumsum(x)/(1:n)
+# Crea un grafico della media cumulativa dal 2000-esimo al n-esimo elemento della sequenza h
+plot(h[2000:n], type="l")
+abline(h = 1, col=2, lwd=2) # Sovrapponi al grafico una linea orizzontale a y = 1
+```
+
+Il grafico mostra come la media cumulativa dei primi n valori del
+campione gamma evolve nel tempo. La linea orizzontale a $y = 1$ serve
+come riferimento per valutare se la media cumulativa converge a un certo
+valore.
+
+Vediamo la variabilità. Il codice genera un grafico che rappresenta
+l'evoluzione della media cumulativa attraverso più simulazioni. Ogni
+simulazione coinvolge l'estrazione di un campione casuale di dimensione
+10000 da una distribuzione $G(1,1)$.
+
+```{r}
+n = 10000 # Imposta la dimensione del campione casuale che verrà generato dalla distribuzione gamma
+nsim = 1000 # Imposta il numero di simulazioni da eseguire
+set.seed(190)
+# Crea una matrice sim di dimensioni n x nsim inizializzata con valori mancanti (NA)
+sim = matrix(NA, nrow = n, ncol = nsim)
+# Esegue le simulazioni
+for(i in 1:nsim){
+    x = rgamma(n, 1, 1) #  Genera un campione casuale da una distribuzione G(1,1)
+    h = cumsum(x)/(1:n) #  Calcola la media cumulativa dei valori nel campione
+    sim[,i] = h # Memorizza i risultati della simulazione nella colonna i della matrice sim
+}
+# Crea un grafico della media cumulativa della prima simulazione.
+plot(sim[,1], type="l")
+# Sovrappone le linee delle medie cumulative delle simulazioni successive usando la funzione lines
+for(i in 2:nsim){
+    lines(sim[,i], lwd=0.1)
+}
+abline(v = 2000, col=2)
+```
+
+Il grafico rappresenta l'andamento della media cumulativa attraverso
+diverse simulazioni e include una linea verticale al punto 2000 sulla
+scala $x$. Questo può essere utile per valutare la variabilità delle
+medie cumulative a diversi momenti.
+
+Il codice crea un grafico della densità di probabilità stimata per due
+differenti insiemi di dati presenti nella matrice sim.
+
+```{r}
+y = sim[10000,] # Rappresenta i valori corrispondenti alla simulazione finale (alla 10000-esima iterazione)
+# Crea un grafico della densità di probabilità stimata per i valori di y utilizzando la funzione density. La funzione density stima la densità di probabilità non parametrica basandosi sui dati forniti
+plot(density(y))
+# Sovrapponi al grafico precedente un'altra curva della densità di probabilità stimata, questa volta per i valori della simulazione alla 1000-esima iterazione
+lines(density(sim[1000,]), col=2)
+abline(v = 1, col=2)
+```
+
+Il grafico mostra le stime della densità di probabilità per due diverse
+simulazioni (alla 10000-esima e alla 1000-esima iterazione) e include
+una linea verticale in corrispondenza del valore 1 sull'asse x. Questo
+può essere utilizzato per confrontare la distribuzione di probabilità
+tra due momenti diversi della simulazione.
+
+Calcoliamo la stima della varianza $$
+\frac{\sum_{i=1}^n (x_i - \hat{E}(x_i))^2}{n}
+$$
+
+Il codice calcola la varianza stimata per ciascuna delle n simulazioni e
+crea un grafico dell'andamento di queste varianze stimare nel corso
+delle simulazioni.
+
+```{r}
+# Crea un vettore stimavar di lunghezza n inizializzato con valori mancanti (NA). Questo vettore sarà utilizzato per memorizzare le varianze stimate
+stimavar = rep(NA, n)
+stimavar[1] = 0
+# Ciclo for itera attraverso le simulazioni (da 1 a n
+for(i in 1:n){
+    xbar = mean(sim[i,]) # Calcola la media dei valori della simulazione corrente
+    # Calcola la varianza stimata per la simulazione corrente e la memorizza nel vettore stimavar. La varianza stimata è calcolata come la somma dei quadrati delle differenze tra i valori e la media, diviso per il numero di colonne nella matrice sim (che rappresenta il numero di campioni in ogni simulazione)
+    stimavar[i] = sum((sim[i,]-xbar)^2)/ncol(sim)
+}
+plot( stimavar, type="l") # Crea un grafico dell'andamento delle varianze stimate nel corso delle simulazioni
+dim(sim) # Restituisce le dimensioni della matrice sim
+```
+
+Il codice genera un grafico che mostra come variano le varianze stimare
+attraverso le diverse simulazioni. Questo può essere utile per osservare
+la stabilità o la variabilità delle varianze stimare nel corso del
+processo di simulazione.
+
+#### FUNZIONE DI RIPARTIZIONE DI UNA $B(1,3)$
+
+Calcoliamo la funzione di ripartizione di una $B(1,3)$. Il codice genera
+tre distribuzioni cumulative empiriche (ECDF) per campioni estratti da
+una distribuzione $B(1,3)$. Inoltre, viene sovrapposta la funzione di
+distribuzione cumulativa teorica (CDF) per la distribuzione beta con gli
+stessi parametri.
+
+```{r}
+# Genera un campione di dimensione n1, n2, n3 da una distribuzione B(1,3)
+x1 = rbeta(10, 1, 3)
+x2 = rbeta(50, 1, 3)
+x3 = rbeta(10000, 1, 3)
+
+xseq = seq(0,1, by = 0.001) # Questi valori saranno utilizzati per valutare le ECDF e la CDF teorica
+# Calcola la ECDF per i campioni
+ec1 = ecdf(x1)(xseq)
+ec2 = ecdf(x2)(xseq)
+ec3 = ecdf(x3)(xseq)
+
+plot(xseq, ec1, type = "l") # Crea un grafico della ECDF per il primo campione
+lines(xseq, ec2, col = 2) # Sovrapponi al grafico una linea della ECDF per il secondo campione
+lines(xseq, ec3, col = 3) # Sovrapponi al grafico una linea della ECDF per il terzo campione
+lines(xseq,  pbeta(xseq, 1, 3), col = 4) # Sovrapponi al grafico una linea della CDF teorica della distribuzione B(1,3)
+
+```
+
+Come si vede dalla la funzione è a scalini con scalini di altezza
+$\frac{1}{n}$ e per $X_{i-1}<a \leq X_i$ è costante. Il codice mostra
+come variano le ECDF per campioni di dimensioni diverse estratti dalla
+stessa distribuzione beta e le confronta con la CDF teorica
+corrispondente.
+
+#### AREA PORZIONE DEL CERCHIO
+
+Calcoliamo l'area di una porzione del cerchio. Io voglio calcolare $$
+\int_{-1}^1 (\sqrt{1-x^2}) dx
+$$
+
+**Opzione 1** $$
+\int_{-1}^1 (\sqrt{1-x^2})2 \frac{1}{2} dx
+$$ Definisco $h(x) = (\sqrt{1-x^2})2$ e allora $$
+\int_{-1}^1h(x) \frac{1}{2} dx
+$$ Se $X \sim U(-1,1)$ allora $$
+\frac{\sum (1-x_i^2)2}{n } \approx\int_{-1}^1h(x) \frac{1}{2} dx
+$$
+
+**Opzione 2** $$
+\int_{-1}^1 (\sqrt{1-x^2}) dx = \int_{-1}^1  \int_{0}^{\sqrt{1-x^2}}f(y) dy dx 
+$$ $f(y)$ densità di un'uniforme e quindi $$
+\int_{-1}^1  \int_{0}^{1} 1_{y < \sqrt{1-x^2}}f(y) dy dx
+$$
+
+calcoliamo il primo integrale
+
+```{r}
+x = 0.5
+y = runif(10000, 0,1)
+sum(y < sqrt(1-x^2))/10000
+
+# valvoliamola
+x = runif(n, -1,1)
+y = runif(10000, 0,1)
+
+plot(x,y, cex = 0.1, pch=20)
+xseq = seq(-1,1, by = 0.01)
+lines(xseq, sqrt(1-xseq^2))
+points(x[(x^2+y^2)<1],y[(x^2+y^2)<1], col=2, pch=20)
+2*sum( (x^2+y^2)<1 )/10000
+```
+
+#### ESEMPIO DI METODI SIMULATIVI
+
+Assumiamo che $X \sim Exp(\lambda)$ e volgiamo calcolare $$
+F(a; \lambda) = \int_{0}^{a} f(x) dx = \int_{0}^{\infty} 1_{<a}(x) f(x) dx \approx \frac{\sum_{i=1}^n  1_{\leq a}(x_i)}{n} = \frac{\sum_{b=1}^B  1_{ \leq a}(x^b)}{B}
+$$ Il codice genera un campione di variabili casuali da una
+distribuzione esponenziale, stimando quindi la CDF empirica al punto
+specificato a e confronta questo valore con il valore esatto della CDF
+al punto a calcolato dalla funzione di distribuzione esponenziale
+
+```{r}
+n = 1000 # numero di variabili casuali generate
+lambda = 1 #  tasso del processo esponenziale
+a = 2 # punto in cui si desidera valutare la funzione di distribuzione cumulativa (CDF)
+
+# Genera n variabili casuali da una distribuzione esponenziale con tasso lambda utilizzando la funzione rexp(n, lambda). Queste variabili casuali seguono una distribuzione esponenziale
+x = rexp(n, lambda)
+Fa_stimata = sum(x <= a)/n # Calcola la funzione di distribuzione cumulativa (CDF) empirica stimata nel punto a
+Fa_stimata
+pexp(a,lambda) # Calcola il valore esatto della CDF al punto a utilizzando la funzione pexp(a, lambda) della distribuzione esponenziale con il tasso lambda
+```
+
+Calcoliamo l'integrale su diversi valori. Il codice estende il concetto
+di calcolare la funzione di distribuzione cumulativa (CDF) empirica
+stimata, ma su una griglia più ampia di valori.
+
+```{r}
+# Genera un campione di n variabili casuali da una distribuzione esponenziale con tasso lambda
+x = rexp(n, lambda)
+avec = seq(0.00000000001, max(x)+0.5, by = 0.01)
+
+Fvec_stimata = c() # vettore che verrà utilizzato per memorizzare i valori stimati della CDF per ciascun valore in avec
+
+# Calcola la CDF empirica stimata per ciascun valore in avec
+for(i in 1:length(avec)){
+    Fvec_stimata[i] = sum(x <= avec[i])/n
+}
+
+plot(avec, Fvec_stimata, type="s") # Plotta la CDF empirica stimata 
+points(x, rep(0, n), cex = 0.3, pch = 20) # Aggiunge al grafico dei punti corrispondenti alle osservazioni nel campione x
+```
+
+Il risultato finale è un grafico che visualizza la CDF empirica stimata
+su una griglia più ampia di valori insieme alle singole osservazioni nel
+campione.
+
+Aggiungiamo alcune funzionalità simulando da $\hat{F}(x)$.
+
+```{r}
+u = runif(1, 0,1) # Genera un numero casuale uniforme u nell'intervallo [0, 1]
+plot(avec, Fvec_stimata, type="s" ) # Genera un numero casuale uniforme u nell'intervallo [0, 1]
+abline(h = u, col = 2, lwd = 2) # Aggiunge una linea orizzontale nel grafico al valore di u
+points(x, rep(0, n), col = 2) # Aggiunge i punti corrispondenti alle osservazioni nel campione x sul grafico
+
+Fvec_stimata_x = c(1:n)/n
+
+x_ord = x[order(x)] # Crea un vettore Fvec_stimata_x che rappresenta i valori della CDF empirica stimata per i dati ordinat
+```
+
+Il codice sembra finalizzato a visualizzare la CDF empirica stimata,
+evidenziando un valore casuale u sulla scala della CDF e confrontando la
+CDF empirica stimata con una rappresentazione ordinata.
+
+Simuliamo nsim punti. Il codice esegue una simulazione di campionamento
+inverso utilizzando la CDF empirica stimata.
+
+```{r}
+nsim = 10000 # numero di simulazioni da eseguire
+xsim = c()
+for(i in 1:nsim){
+    u = runif(1, 0,1) # Genera un numero casuale uniforme u nell'intervallo [0, 1]
+    w = which(Fvec_stimata_x >= u)[1] # Trova il più piccolo indice in Fvec_stimata_x tale che il valore corrispondente è maggiore o uguale a u
+    xsim[i] = x_ord[w] # Usa l'indice trovato per selezionare il corrispondente valore ordinato da x_ord e memorizzarlo in xsim
+}
+table(xsim) # tabella delle frequenze
+plot(density(xsim)) # stima della densità 
+lines(avec, dexp(avec, 1), col = 2) # sovrapposizione di una densità esponenziale con tasso 1 sull'istogramma dei risultati
+hist(xsim) # istogramma dei risultati
+```
+
+Calcoliamo $$
+f(x^*) = \int_{\mathbb{R}^+} f(x|y)f(y) dy
+$$ con $Y \sim Exp(\lambda)$ e $X|Y=y \sim G(\exp y, 1)$ Lo stimiamo
+come $$
+\frac{\sum f(x^*|y_i)}{n}
+$$ Il codice stima la funzione di densità di probabilità (PDF) di una
+variabile casuale distribuita secondo una distribuzione gamma, ma con i
+parametri della distribuzione (shape e scale) dati dal valore
+esponenziale di un campione di variabili casuali esponenziali.
+
+```{r}
+n = 10000 # numero di variabili casuali esponenziali generate
+xstar = seq(0, 10, by = 0.1) #  sequenza di valori da 0 a 10 con passo 0.1 che verranno utilizzati come punti di valutazione per la PDF stimata.
+
+f_stima = rep(NA,length(xstar)) # verrà utilizzato per memorizzare i risultati della stimata della PDF
+y = rexp(n, 1)
+
+for(i_x in 1:length(xstar)){
+    xs = xstar[i_x]
+    f_stima[i_x] = 0
+    # Per ogni variabile casuale esponenziale generata (y), calcola il valore della PDF della distribuzione gamma al punto xs con i parametri shape e scale dati da exp(y)
+    for(i in 1:n){
+        f_stima[i_x] = f_stima[i_x] + dgamma(xs, exp(y[i]))
+    }
+    # Divide f_stima[i_x] per il numero di variabili casuali esponenziali generate (n).
+    f_stima[i_x] = f_stima[i_x]/n 
+}
+plot(xstar, f_stima, type = "l") # la stima della PDF
+```
+
+In sostanza, questo codice stima la PDF di una variabile casuale
+distribuita secondo una distribuzione gamma, dove i parametri della
+distribuzione sono ottenuti tramite il valore esponenziale di un
+campione di variabili casuali esponenziali.
+
+#### ESEMPIO RAO-BLACKWELL
+
+Voglio calcolare $$
+E(h(X))
+$$ con $X \sim N(\mu_x, \sigma^2_x)$, potrei approssimarlo con $$
+\frac{\sum h(x_i)}{n}
+$$ Il codice esegue un'approssimazione dell'aspettativa di una variabile
+casuale X tramite il metodo di Monte Carlo. In particolare, sembra
+stimare l'aspettativa di X utilizzando un campione casuale di dimensione
+nsim dalla distribuzione normale con media mu e deviazione standard
+sigma.
+
+```{r}
+nsim = 1000 # Definisce il numero di campioni generati per l'approssimazione di Monte Carlo
+mu = 0
+sigma = 1
+
+# Assumo h(X) = X
+x = rnorm(nsim, mu, sigma) # Genera un campione di dimensione nsim da una distribuzione normale con media mu e deviazione standard sigma.
+
+approx_mc = sum(x)/nsim # Calcola l'approssimazione dell'aspettativa di X come la somma di tutti i valori nel campione divisa per il numero di campioni (nsim).
+approx_mc
+```
+
+Assumiamo che $(X,Y)^T \sim N_2(\boldsymbol{\mu}, \boldsymbol{\Sigma})$
+con $$
+\boldsymbol{\mu} = (\mu_x, \mu_y)^T
+$$ con $diag( \boldsymbol{\Sigma}) = (\sigma_x^2, \sigma_y^2)^T$ e
+l'extradiagonale è $\sigma_{x,y}$
+
+Calcoliamo l'approssimazione $$
+E(E(X|Y)) \approx \frac{\sum E(X|y_i)}{n}
+$$ il valore atteso condizionato è $$
+E(X|y_i) = \mu_x +  \sigma_{x,y}(\sigma_{y}^2)^{-1} (y_i -\mu_y)
+$$ e varianza condizionata $$
+Var(X|y_i) = \sigma_x^2 -  \sigma_{x,y}(\sigma_{y}^2)^{-1} \sigma_{x,y}^T
+$$ Il codice implementa una simulazione Monte Carlo per calcolare
+l'approssimazione condizionata di una media.
+
+```{r}
+mu = c(0,2) # vettore di medie
+Sigma = matrix(c(1, 0.9, 0.9, 1), ncol = 2) # matrice di covarianza con valori 1 sulla diagonale principale e 0.9 negli altri elementi
+
+# Definizione di una funzione cond_mean
+# La funzione prende un parametro y e calcola una media condizionata utilizzando i parametri mu e Sigma. La formula è basata su una distribuzione normale condizionata.
+cond_mean = function(y){
+    mu[1]+Sigma[1,2]*(y-mu[2])/Sigma[2,2]
+}
+
+# Simuliamo y
+# Viene generato un vettore y di dati casuali dalla distribuzione normale con media mu[2] e deviazione standard Sigma[2,2]^0.5.
+y = rnorm(nsim, mu[2], Sigma[2,2]^0.5)
+mean_cond_vec = c() 
+# Viene utilizzato un ciclo for per calcolare la media condizionata per ogni valore di y generato.
+for(i in 1:nsim){
+    mean_cond_vec[i] = cond_mean(y[i]) # L'approssimazione Monte Carlo viene ottenuta calcolando la media delle medie condizionata
+}
+approx_mc2 = sum(mean_cond_vec)/nsim #  l'approssimazione della media condizionata basata sulla simulazione Monte Carlo
+approx_mc2
+```
+
+Il codice simula dati da una distribuzione normale, quindi calcola la
+media condizionata utilizzando una formula specifica e restituisce
+un'approssimazione Monte Carlo di questa media condizionata. La
+precisione dell'approssimazione dipenderà dalla dimensione del campione
+(nsim).
+
+Approssimiamo le varianze di $$
+Var(X) \approx \frac{\sum var(x_i)}{n}
+$$ e $$
+Var(E(X|Y))\approx \frac{\sum var(E(X|y_i))}{n}
+$$ con metodi Monte Carlo.
+
+Una stima della varianza, se ho dei campioni $z$ qualsiasi, viene dato
+da $$
+\sum_{i=1}^n(z_i- \bar{z})^2/n
+$$ Il codice è un esempio di simulazione Monte Carlo per valutare la
+varianza di stimatori in due situazioni:
+
+1.  **Stima della Varianza per Variabili Marginali**. Viene generata una
+    variabile casuale $x_{marg}$ da una distribuzione normale standard
+    $N(0,1)$ con dimensione $n=100$. Viene calcolato uno stimatore per
+    la media di $x_{marg}$. Viene calcolata la varianza di questo
+    stimatore.
+
+2.  **Stima della Varianza per Variabili Condizionali
+    (Rao-Blackwellizando)**. Viene generata una variabile casuale $y$
+    dalla parte marginale della seconda componente di una distribuzione
+    normale multivariata con media $mu = c(0,2)$ e matrice di covarianza
+    $Sigma = matrix(c(1,0.0,0.0,1), ncol = 2)$. Viene definita una
+    funzione $cond_{mean}$ per calcolare la media condizionale della
+    prima componente condizionata a $y$. Viene calcolato uno stimatore
+    per la media condizionale. Viene calcolata la varianza di questo
+    stimatore.
+
+Vengono generati tre grafici: 1. La densità delle varianze ottenute per
+le variabili marginali (var1). 2. La densità delle varianze ottenute per
+le variabili condizionali (var2). 3. Un plot della varianza ottenuta per
+le variabili condizionali (var2).
+
+Questo tipo di analisi può essere utilizzato per confrontare la
+precisione degli stimatori nelle due situazioni e verificare se
+l'approccio Rao-Blackwellizzante porta a una riduzione della varianza
+rispetto all'uso di variabili marginali.
+
+```{r}
+var_mc1 = sum((x-mean(x))^2)/nsim^2 # calcola una stima della varianza di un vettore di dati x
+# Dallo script precedente, mean_cond_vec è la media condizionata per ogni valore di y generato
+z = mean_cond_vec
+var_mc2 = sum((z-mean(z))^2)/nsim^2 # calcola una stima della varianza di un vettore di dati z
+
+var1 = c()
+var2 = c()
+for(i in 1:10000){
+    # Simuliamo dalla normali
+    n = 100
+    x_marg = rnorm(n, 0,1)
+
+    # Stimatore
+    mean(x_marg)
+    # E la sua varianza
+    sum( (x_marg-mean(x_marg))^2)/nsim^2
+
+    # Facciamo la stessa cosa usando le normali multivariate e condizionando (Rao-Blackwellizando)
+
+    # settiamo i parametri della congiunta
+    mu = c(0,2)
+    Sigma = matrix(c(1,0.0,0.0,1), ncol=2)
+    # Siamo interessati alla prima componente N(0,1) )
+
+    # Funzione della media cond per calcolare la media condizionale della prima componente condizionata a y
+    cond_mean = function(y){
+        mu[1]+Sigma[1,2]*(y-mu[2])/Sigma[2,2]
+    }
+    
+    # Simulo dalla marginale della seconda componente
+    y = rnorm(n, mu[2], Sigma[2,2]^0.5)
+
+    # Calcolo lo stimatore
+    mean(cond_mean(y))
+    # E la sua varianza
+    sum(  (cond_mean(y)-mean(cond_mean(y)))^2 )/n^2
+
+    # Confronto le varianze
+    var1[i] =  sum((x_marg-mean(x_marg))^2)/n^2
+    var2[i] =  sum((cond_mean(y)-mean(cond_mean(y)))^2)/n^2
+}
+par(mfrow=c(1,3))
+plot(density(var1))
+plot(density(var2))
+plot(var2)
+```
+
+Vediamo l'effetto della dipendenza. Il codice è un esempio di
+simulazione di variabili casuali da una distribuzione normale
+multivariata
+
+1.  **Definizione della Funzione rmnorm**. *rmnorm* è una funzione che
+    simula dati da una distribuzione normale multivariata. Gli argomenti
+    sono il numero di osservazioni $n$, il vettore medio $mean$, e la
+    matrice di covarianza $varcov$. Viene verificato il numero di
+    colonne nella matrice di covarianza $d$, e poi viene generata una
+    matrice $z$ di numeri casuali da una distribuzione normale standard.
+    La matrice $z$ viene moltiplicata per la decomposizione di Cholesky
+    della matrice di covarianza $chol(varcov)$. Il risultato viene
+    trasformato per ottenere i dati della distribuzione normale
+    multivariata richiesta.
+
+2.  **Prima Simulazione con Correlazione 0.01**. Viene specificato un
+    vettore medio $mu_{sim}$ e una matrice di covarianza $Sigma_{sim}$
+    con correlazione $0.01$. Viene utilizzata la funzione rmnorm per
+    generare $10000$ osservazioni da questa distribuzione. Viene creato
+    uno *scatter plot* dei dati con smoothScatter. Vengono tracciate
+    linee verticali *(abline(v= mu[1], col=2))* e orizzontali
+    *(abline(h= mu[2], col=2))* alla posizione della media della
+    distribuzione di riferimento $mu$. Vengono tracciate anche linee
+    verticali *(abline(v =
+    mu_sim[1]+Sigma_sim[1,2]*(0-mu_sim[2])/Sigma_sim[2,2], col=3))\* e
+    orizzontali *(abline(h = 0, col=3))* alla posizione della media
+    condizionale quando $y = 0$.
+
+3.  **Seconda Simulazione con Correlazione 0.99**. Viene specificato un
+    nuovo vettore medio $mu_{sim}$ e una nuova matrice di covarianza
+    $Sigma_{sim}$ con correlazione $0.99$. Viene nuovamente utilizzata
+    la funzione rmnorm per generare $10000$ osservazioni da questa nuova
+    distribuzione. Viene creato un secondo *scatter plot* dei dati con
+    smoothScatter. Vengono tracciate le stesse linee di riferimento e le
+    linee della media condizionale rispetto alla prima simulazione.
+
+In entrambe le simulazioni, si sta esaminando l'effetto di variare la
+correlazione tra le variabili nella distribuzione normale multivariata,
+e si stanno confrontando le distribuzioni condizionali in base a diverse
+correlazioni. La funzione *cond_mean(0)* calcola la media condizionale
+della prima componente quando $y = 0$.
+
+```{r}
+# Definzione funzione rmnorm che simula dati da una distribuzione normale multivariata
+rmnorm=function(n = 1, mean = rep(0, d), varcov){
+  # Numero di colonne nella matrice di covarianza
+  d <- if (is.matrix(varcov))
+    ncol(varcov)
+  else 1
+  # Generazione matrice numeri casuali da una distribuzione normale standard per la decomposizione di Cholesky della matrice di covarianza
+  z <- matrix(rnorm(n * d), n, d) %*% chol(varcov)
+  y <- t(mean + t(z)) 
+  return(y)
+}
+
+# Simulazione 1
+simbi = 10000
+mu_sim = c(0, 2)
+Sigma_sim = matrix(c(1, 0.01, 0.01, 1), ncol = 2)
+z = rmnorm(n = simbi, mean = mu_sim, Sigma_sim)
+
+par(mfrow=c(1,2))
+smoothScatter(z[,1],z[,2], pch=20, cex=.2, main= "Cor 0.01", xlab="x", ylab="y")
+abline(v= mu[1], col=2)
+abline(h= mu[2], col=2)
+# Assumo y = 0
+abline(h = 0, col=3)
+abline(v = mu_sim[1]+Sigma_sim[1,2]*(0-mu_sim[2])/Sigma_sim[2,2], col=3)
+
+# Simulazione 2
+simbi = 10000
+mu_sim = c(0,2)
+Sigma_sim = matrix(c(1,0.99,0.99,1), ncol=2)
+z = rmnorm(n = simbi, mean = mu_sim, Sigma_sim)
+
+smoothScatter(z[,1],z[,2], pch=20, cex=.2, main="Cor 0.99", xlab="x", ylab="y")
+abline(v= mu[1], col=2)
+abline(h= mu[2], col=2)
+# Assumo y = 0
+abline(h = 0, col=3)
+abline(v = mu_sim[1]+Sigma_sim[1,2]*(0-mu_sim[2])/Sigma_sim[2,2], col=3)
+```
+
+#### IMPORTANCE SAMPLING
+
+Importance sampling per la media di una normal, scegliendo come g diverse t di student.
+
+Il codice genera un grafico delle funzioni di densità di probabilità (pdf) della distribuzione normale standard $N(0,1)$ e di diverse distribuzioni t di Student con diversi gradi di libertà. Successivamente, vengono simulate variabili casuali da queste distribuzioni t e vengono calcolati degli stimatori.
+
+1. **Grafico delle Funzioni di Densità di Probabilità.**
+   - `xseq` è una sequenza di valori da -3.5 a 3.5.
+   - `dnorm(xseq, 0, 1)` calcola i valori della pdf della distribuzione normale standard per la sequenza `xseq`.
+   - `dt(xseq, df)` calcola i valori della pdf della distribuzione t di Student con `df` gradi di libertà per la sequenza `xseq`.
+   - Viene creato un grafico delle funzioni di densità di probabilità per la distribuzione normale standard e tre distribuzioni t di Student con diversi gradi di libertà (1, 5, 20).
+   - La legenda mostra le etichette delle distribuzioni.
+
+2. **Simulazione di Variabili Casuali e Calcolo degli Stimatori.**
+   - Vengono simulate tre campioni di dimensione 1000 da distribuzioni t di Student con gradi di libertà 1, 5, e 20.
+   - Gli stimatori m1, m2, e m3 vengono calcolati come il prodotto di ciascuna variabile casuale t con il rapporto tra la pdf della distribuzione normale standard e la pdf della distribuzione t.
+   - Viene calcolata la media di ciascuno degli stimatori m1, m2, e m3.
+   - Viene calcolata la varianza campionaria normalizzata di ciascuno degli stimatori (var(m1)/n, var(m2)/n, var(m3)/n), dove n è la dimensione del campione.
+
+In generale, questo codice esplora il comportamento di stimatori basati su distribuzioni t di Student in confronto con la distribuzione normale standard. La varianza campionaria normalizzata fornisce una stima dell'errore quadratico medio degli stimatori. Il confronto può essere utile per comprendere come il cambiamento della forma della distribuzione influisca sulla qualità degli stimatori.
+
+```{r}
+xseq = seq(-3.5, 3.5,length.out = 1000) 
+# dnorm calcola i valori della pdf della distribuzione normale standard per la sequenza xseq
+# dt calcola i valori della pdf della distribuzione t di Student con df gradi di libertà per la sequenza xseq
+plot(xseq, dnorm(xseq, 0,1), col=1, lwd=2, type="l")
+lines(xseq, dt(xseq,1), col=2, lwd=2)
+lines(xseq, dt(xseq,5), col=3, lwd=2)
+lines(xseq, dt(xseq,20), col=4, lwd=2)
+legend("topright", c("N(0,1)", "T(1)", "T(5)", "T(20)"),col=1:4,lwd=2)
+
+n = 1000
+# Simulazione tre campioni da t di Student con diversi gradi di libertà
+x_t1 = rt(n,1)
+x_t5 = rt(n,5)
+x_t20 = rt(n,20)
+
+# Calcoliamo gli stimatori
+m1 = x_t1*dnorm(x_t1,0,1)/dt(x_t1,1)
+m2 = x_t5*dnorm(x_t5,0,1)/dt(x_t5,5)
+m3 = x_t20*dnorm(x_t20,0,1)/dt(x_t20,20)
+
+# Media
+mean(m1)
+mean(m2)
+mean(m3)
+
+# Realizzazione dell'approssimazione della Var(X)
+var(m1)/n 
+var(m2)/n
+var(m3)/n
+```
+
+Se voglio stimare la varianza, posso fare una simulazione. Il codice esegue una simulazione Monte Carlo per valutare la varianza degli stimatori calcolati da distribuzioni t di Student con diversi gradi di libertà.
+1. **Ciclo For** per ogni iterazione del ciclo (isim da 1 a nvar):
+- Viene generato un campione da una distribuzione t di Student con gradi di libertà 1, 5, e 20 (x_t1, x_t5, x_t20)
+- Vengono calcolati gli stimatori m1, m2, e m3 usando la stessa logica descritta nel codice precedente.
+- Le varianze degli stimatori vengono calcolate e salvate nei rispettivi vettori var_mc1, var_mc2, e var_mc3.
+
+2. **Grafico delle Densità delle Varianze degli Stimatori**. Viene creato un grafico delle densità delle varianze degli stimatori ottenuti nelle simulazioni per le distribuzioni normale standard (blu), t di Student con df=1 (verde), t di Student con df=5 (rosso) e t di Student con df=20 (viola).
+
+Il grafico finale fornisce una rappresentazione visiva delle densità delle varianze degli stimatori per ciascuna distribuzione in considerazione. Questo può essere utile per confrontare la precisione degli stimatori nelle diverse distribuzioni t di Student con diversi gradi di libertà.
+
+```{r}
+nvar = 1000 # Numero di simulazioni da eseguire
+
+# Vettori in cui vengono salvate le varianze degli stimatori ottenuti in ciascuna simulazione
+var_mc1 = c()
+var_mc2 = c()
+var_mc3 = c()
+
+for(isim in 1:nvar){
+    n = 1000
+    # Generazione del campione
+    x_t1 = rt(n,1)
+    x_t5 = rt(n,5)
+    x_t20 = rt(n,20)
+
+    # Calcolo degli stimatori
+    m1 = x_t1*dnorm(x_t1,0,1)/dt(x_t1,1)
+    m2 = x_t5*dnorm(x_t5,0,1)/dt(x_t5,5)
+    m3 = x_t20*dnorm(x_t20,0,1)/dt(x_t20,20)
+  
+    # Calcolo varianze degli stimatori
+    var_mc1[isim] = var(m1)
+    var_mc2[isim] = var(m2)
+    var_mc3[isim] = var(m3)
+}
+
+# Calcolo degli Stimatori Medi
+stimatore1 = mean(var_mc1)
+stimatore2 = mean(var_mc2)
+stimatore3 = mean(var_mc3)
+
+# Grafico delle Densità delle Varianze degli Stimatori
+plot(density(var_mc1), col=2, xlim=c(0,1.4))
+lines(density(var_mc2), col=3)
+lines(density(var_mc3), col=4)
+
+legend("topright", c("N(0,1)", "T(1)", "T(5)", "T(20)"),col=1:4,lwd=2)
+```
+
+Vediamo un caso un po' più complesso.
+Il codice esegue una simulazione Monte Carlo per confrontare gli stimatori della varianza di una distribuzione half t(3) (definita solo sui positivi) rispetto a due distribuzioni di riferimento: half normal(0,1) e half cauchy(0,1).
+
+1. **Grafico delle Densità**
+   - Viene creato un grafico delle densità di probabilità per una half t(3) (HT(3)), una half normal(0,1) (HN(0,1)), e una half cauchy(0,1) (HC(0,1)).
+   - La densità di HT(3) viene moltiplicata per 2 per confrontarla meglio con le altre due distribuzioni.
+
+2. **Simulazione Monte Carlo.**
+   - Vengono eseguite 10000 simulazioni.
+   - Per ciascuna simulazione:
+     - `x_norm` viene generato da una distribuzione normale standard.
+     - `x_cauchy` viene generato da una distribuzione cauchy standard.
+     - Vengono calcolati gli stimatori della varianza come la media di `(|x| * f(x))/g(x)`, dove `f(x)` è la densità di HT(3) e `g(x)` è la densità di riferimento (dnorm per `x_norm` e dt con df=1 per `x_cauchy`).
+     - I risultati vengono salvati nella struttura dati `results`.
+
+3. **Calcolo delle Medie e delle Varianze.**
+   - Vengono calcolate le medie degli stimatori per ciascuna distribuzione di riferimento (`apply(results, 2, mean)`).
+   - Viene calcolata la varianza campionaria normalizzata degli stimatori per ciascuna distribuzione di riferimento (`var`).
+
+4. **Stampa delle Varianze.**
+   - Vengono stampate le varianze campionarie normalizzate degli stimatori.
+
+In generale, il codice esplora la qualità degli stimatori della varianza per la distribuzione half t(3) rispetto a due distribuzioni di riferimento. La varianza campionaria normalizzata degli stimatori fornisce una misura della precisione degli stimatori.
+
+```{r}
+# Voglaimo simulare da una half t(3) (t distribution definita solo sui positivi) usando come g uno half normal(0,1), e half cauchy(0,1) (una half t(1))
+
+xseq = seq(0, 5, by = 0.01)
+# Grafico delle Densità
+plot(xseq,dt(xseq, 3)*2, col=1, lwd=2, type="l",ylim= c(0,0.43*2))
+lines(xseq, dnorm(xseq)*2, col=2, lwd=2)
+lines(xseq, dt(xseq,1)*2, col=3, lwd=2)
+legend("topright", c("HT(3)", "HN(0,1)", "HC(0,1)"), col=1:4, lwd=rep(2,4), lty=rep(1,4))
+
+# Simulazione Monte Carlo:
+nsim = 10000
+n = 100
+results = data.frame(list(normal=rep(0,nsim), Cauchy=rep(0,nsim), t3=rep(0,nsim)))
+
+for (i in 1:nsim) {
+   x_norm = rnorm(n) # generato da una distribuzione normale standard
+   x_cauchy = rt(n, 1) # generato da una distribuzione cauchy standard
+   
+   # Stimatori della varianza
+   results[i,1] = mean(abs(x_norm)*dt(x_norm, df=3)/dnorm(x_norm))
+   results[i,2] = mean(abs(x_cauchy)*dt(x_cauchy, df=3)/dt(x_cauchy, df=1))
+   results[i,3] = mean(abs(rt(100, df=3)))
+}
+
+# Calcolo delle Medie e delle Varianze
+apply(results,2,mean)
+var = c()
+var[1] = sum((results[,1]-mean(results[,1]))^2)/n^2
+var[2] = sum((results[,2]-mean(results[,2]))^2)/n^2
+var[3] = sum((results[,3]-mean(results[,3]))^2)/n^2
+
+# Stampa delle Varianze
+print("Var")
+var
+```
+
+#### STIMA DELLA VARIANZA 
+
+Assumiamo che $X \sim F(\boldsymbol{\theta})$ e sono interessato a
+$$
+E(h(X))
+$$
+che lo approssimo con
+$$
+Y = \frac{\sum_{i=1}^n h(X_i)}{n}
+$$
+con $X_i \sim F(\theta)$, iid. Abbiamo che $Y \sim H(\theta)$. Lo scopo è stimare la varianza
+$$
+Var(Y) = \frac{Var(h(X))}{n}
+$$
+
+La varianza è
+$$
+Var(Q) = E(Q^2)-E^2(Q) \approx \frac{\sum{Q_i^2}}{n}- \left(\frac{\sum{Q_i}}{n} \right)^2 = \frac{\sum (Q_i-\bar{Q})^2}{n}
+$$
+
+- **Metodo 1 - approssimo** $Var(h(X))$
+$$
+ Var(h(X))) \approx \frac{\sum (h(X_i)-\bar{h(X)})^2}{n}
+$$
+e 
+$$
+ Var(Y) = \frac{\frac{\sum (h(X_i)-\bar{h(X)})^2}{n}}{n}
+$$
+
+Il codice genera un vettore $x$ di lunghezza $n$ da una distribuzione $G(p_1, p_2)$. Successivamente, calcola la media campionaria $mean_{mc}$ e la prima stima della varianza $var_{mc1}$.
+
+```{r}
+# Metodo 1
+n = 10 # Definisce la lunghezza del vettore x, ovvero il numero di campioni che verranno generati dalla distribuzione gamma
+
+# X ~ G(p1,p2)
+p1 = 3 # Parametro di forma della distribuzione gamma
+p2 = 0.3 # Parametro di tasso della distribuzione gamma
+
+x = rgamma(n, p1, p2)
+
+mean_mc = sum(x)/n # Calcola la media campionaria dei valori nel vettore x
+
+
+# Prima stima varianza
+var_x = sum((x-mean(x))^2)/n # Calcola la varianza campionaria di x
+var_mc1 = var_x/n # Calcola una prima stima della varianza dividendo la varianza campionaria per il numero di campioni n
+```
+In sintesi, il codice genera un campione di lunghezza $n$ da una distribuzione gamma con parametri dati, quindi calcola la media campionaria e una prima stima della varianza del campione.
+
+- **Metodo 2 -  approssimo** $Var(Y)$.
+So che $Y \sim H(\theta)$, e assumiamo che ha una varianza e una media, finite. Se voglio approssimare la varianza di Y, devo calcolare
+$$
+Var(Y) \approx  \frac{\sum_{j = 1}^m (Y_j-\bar{Y})^2}{m}
+$$
+Ho bisogno di campioni iid $Y_j \sim H(\theta)$, che posso ottenere come
+$$
+Y_j = \frac{\sum_{i}^n h(X_{j,i})}{n}
+$$
+con $X_{j,i} \sim F(\theta)$ con $i = 1, \dots , n$
+
+Il codice effettua una seconda stima della varianza del campione mediante simulazione Monte Carlo. 
+
+```{r}
+# Metodo 2
+msim = 10000  # Numero di simulazioni Monte Carlo
+y = c() # Memorizzerà le medie campionarie dei campioni generati nelle simulazioni.
+
+# Vengono generate nuove realizzazioni xj della distribuzione gamma. Per ciascuna realizzazione, calcola la media campionaria e la salva nel vettore y
+for (jsim in 1:msim) {
+  xj = rgamma(n, p1, p2)  # Genera un nuovo campione dalla distribuzione gamma
+  y[jsim] = mean(xj)  # Calcola la media campionaria del nuovo campione e la salva in un vettore
+}
+
+var_mc2 = sum((y - mean(y))^2) / msim  # Calcola la seconda stima della varianza utilizzando le medie campionarie memorizzate nel vettore y
+# Questa stima viene ottenuta sommando i quadrati delle deviazioni dalla media e dividendo per il numero di simulazioni Monte Carlo
+```
+
+- **Metodo 3**
+Definisco
+$$
+W = \frac{\frac{\sum (h(X_i)-\bar{h(X)})^2}{n}}{n}
+$$
+che ha una distribuzione $W \sim L(\theta)$, e voglio approssimare
+$$
+E(W)
+$$
+con 
+$$
+\frac{\sum_{p= 1}^s W_p}{s}
+$$
+con 
+$$
+W_p  = \frac{\frac{\sum (h(X_{p,i})-\bar{h(X_p)})^2}{n}}{n}
+$$
+
+Il codice implementa un terzo metodo per stimare la varianza del campione mediante simulazione Monte Carlo.
+
+```{r}
+# Metodo 3
+ssim = msim  # Numero di simulazioni Monte Carlo
+w = c() # Verrà utilizzato per memorizzare i contributi individuali alla varianza calcolati in ogni simulazione
+
+# In ogni iterazione, viene generato un nuovo campione dalla distribuzione gamma. Successivamente, viene calcolato il contributo individuale alla varianza, che è la somma dei quadrati delle deviazioni dalla media, diviso per n^2, e questo valore viene memorizzato nel vettore w
+for (psim in 1:ssim) {
+  xp = rgamma(n, p1, p2)  # Genera un nuovo campione dalla distribuzione gamma
+  w[psim] = sum((xp - mean(xp))^2) / n^2  # Calcola e salva il contributo individuale alla varianza
+}
+
+var_mc3 = mean(w)  # Calcola la terza stima della varianza media
+# Calcola la terza stima della varianza media prendendo la media dei contributi individuali alla varianza memorizzati nel vettore w
+
+var_mc1
+var_mc2
+var_mc3
+```
+#### BOOTSTRAP
+
+Descrizione del dataset. The data are length (Y) and age (x) measurements for 27 captured dugongs (seacows- mucche di mare).
+Vogliamo capire la relazione tra i due.
+
+DATASET
+```{r}
+x = c( 1.0,  1.5,  1.5,  1.5, 2.5,   4.0,  5.0,  5.0,  7.0,
+	            8.0,  8.5,  9.0,  9.5, 9.5,  10.0, 12.0, 12.0, 13.0,
+	           13.0, 14.5, 15.5, 15.5, 16.5, 17.0, 22.5, 29.0, 31.5)
+# valori y
+Y = c(1.80, 1.85, 1.87, 1.77, 2.02, 2.27, 2.15, 2.26, 2.47,
+	           2.19, 2.26, 2.40, 2.39, 2.41, 2.50, 2.32, 2.32, 2.43,
+	           2.47, 2.56, 2.65, 2.47, 2.64, 2.56, 2.70, 2.72, 2.57)
+
+
+plot(x,Y)
+
+```
+
+Assumiamo che
+$$
+Y_i \sim N(\alpha - \beta \gamma^{x_i}, \sigma^2)
+$$
+con $\alpha \in \mathbb{R}^+$ $\beta \in \mathbb{R}^+$ , $\gamma \in [0,1]$.
+Potrei definire
+$$
+z_i = \gamma^{x_i}
+$$
+$$
+\lambda = -\beta
+$$
+allora ho che
+$$
+y_i = \alpha +\lambda z_i + \epsilon_i \ \ \ \epsilon_i \sim N(0, \sigma^2)
+$$
+quindi ho che 
+$$
+\hat{\alpha} = \bar{y}- \hat{\lambda} \bar{z}
+$$
+$$
+\hat{\lambda} = \frac{\sum (z_i-\bar{z})(y_i-\bar{y})}{\sum  (z_i-\bar{z})^2}
+$$
+Se voglio trovare stimatore ML di $\gamma$ devo minimizzare
+$$
+\text{inf}_{\gamma} \sum (y_i - (\alpha - \beta \gamma^{x_i}))^2 = 
+$$
+$$
+\text{inf}_{\gamma} (\sum (y_i - \alpha)^2 +  \sum (\beta \gamma^{x_i})^2 -2 \sum  (y_i - \alpha)(\beta \gamma^{x_i}))
+$$
+Siccome non so calcolarlo, faccio ottimizzazione
+creo la funzione da minimizzare.
+
+Il codice definisce una funzione **fff** che prende in input un vettore param e restituisce il negativo del logaritmo della funzione di verosimiglianza. Successivamente, utilizza la funzione **optim** per massimizzare questa funzione di verosimiglianza negativa e ottenere stime dei parametri del modello.
+
+```{r}
+fff = function(param) {
+  a = exp(param[1])
+  b = exp(param[2])
+  g = exp(param[3]) / (1 + exp(param[3]))
+  s = exp(param[4])
+  m = a - b * g^xb
+  # La funzione di verosimiglianza negativa è calcolata come il negativo del logaritmo della funzione di densità di probabilità normale (dnorm). La somma di questi logaritmi è memorizzata nella variabile like
+  like = sum(dnorm(Yb, m, s^0.5, log = TRUE))
+  # La funzione restituisce il negativo della somma del logaritmo della funzione di verosimiglianza, poiché la funzione optim minimizza, non massimizza
+  return(-like)
+}
+
+Yb = Y
+xb = x
+
+# Ottimizza la funzione di verosimiglianza negativa
+param = optim(c(0, 0, 0, 0), fff, method = "BFGS")$par
+# La funzione optim viene utilizzata per massimizzare la funzione di verosimiglianza negativa. I parametri stimati vengono poi estratti dalla parte optim(...)$par
+
+# Estrai i parametri stimati
+# I parametri stimati sono ottenuti esponenziando gli elementi del vettore param
+a = exp(param[1])
+b = exp(param[2])
+g = exp(param[3]) / (1 + exp(param[3]))
+s = exp(param[4])
+
+```
+
+In sintesi, questo codice esegue l'ottimizzazione dei parametri di un modello utilizzando la massimizzazione della verosimiglianza negativa e restituisce le stime dei parametri.
+
+Vediamo se le stima hanno senso.
+
+```{r}
+plot(x,Y)
+fseq = seq(0, 40, by = 0.01)
+lines(fseq, a-b*g^fseq, col=2, lwd=2)
+a
+b
+g
+s
+```
+
+Vediamo com'è fatta la distribuzione di y.
+
+```{r}
+plot(density(Y))
+```
+
+Posso trovare una stima di $F$ di $y$.
+Il codice crea un plot della funzione di distribuzione empirica dei dati ordinati. 
+
+```{r}
+# Ordina i dati Y in ordine crescente
+yord = Y[order(Y)]
+
+# Calcola la lunghezza dei dati
+n = length(Y)
+
+# Calcola la funzione di distribuzione empirica, che rappresenta la probabilità cumulativa di ciascun dato ordinato. La variabile d contiene queste probabilità cumulative
+d = (1:(n)) / n
+
+# Crea il plot della funzione di distribuzione empirica
+plot(yord, d, type = "s", main = "Empirical Distribution Function", xlab = "Ordered Data", ylab = "Cumulative Probability")
+```
+
+In sintesi, il grafico mostra la funzione di distribuzione empirica dei dati ordinati, dove l'asse x rappresenta i dati ordinati e l'asse y rappresenta la probabilità cumulativa associata a ciascun dato. La linea a gradini collega i punti della funzione di distribuzione empirica.
+
+Simulo e ri-stimo gamma.
+
+Il codice esegue un bootstrap per stimare la distribuzione dei parametri del modello, in particolare il parametro $g$, attraverso 10000 campionamenti bootstrap.
+
+```{r}
+# Inizializza un vettore vuoto per memorizzare le stime di g ottenute con il bootstrap
+boot_gamma = c()
+
+# Esegui il campionamento bootstrap
+for (ib in 1:10000) {
+  # Campionamento bootstrap selezionando casualmente con sostituzione indici da 1 a n
+  samp = sample(1:n, n, replace = TRUE)
+  # Crea i vettori di dati di bootstrap utilizzando gli indici campionati.
+  Yb = Y[samp]
+  xb = x[samp]
+  
+  # Ottimizza la funzione di verosimiglianza negativa con i dati di bootstrap
+  param = optim(c(0, 0, 0, 0), fff, method = "BFGS")$par
+
+  # Estrai il parametro g stimato
+  g = exp(param[3]) / (1 + exp(param[3]))
+  
+  # Memorizza la stima di g nel vettore boot_gamma
+  boot_gamma[ib] = g
+}
+# Alla fine del ciclo, il vettore boot_gamma conterrà le stime di g ottenute tramite il bootstrap
+```
+
+Il codice plotta una stima della densità della distribuzione di g ottenuta attraverso il bootstrap utilizzando la funzione density, e l'altro è un istogramma della distribuzione di g con la sovrapposizione della stima della densità.
+
+```{r}
+# Stima della densità di boot_gamma
+plot(density(boot_gamma))
+# Istogramma di boot_gamma con sovrapposizione della stima della densità
+hist(boot_gamma, add=T, freq=F)
+```
+
+#### ESEMPIO SIMULATO BOOTSTRAP
+Simuliamo da una Poisson.
+
+Il codice R simula un campione da una distribuzione di Poisson e quindi calcola la media campionaria (xbar) e la varianza campionaria (varhat) del campione originale. Successivamente, esegue un processo di bootstrap 1000 volte, calcolando la media campionaria e la varianza campionaria per ciascun campionamento, e infine crea un layout a due colonne con istogrammi delle distribuzioni delle medie campionarie e delle varianze campionarie ottenute tramite bootstrap.
+
+```{r}
+# Simula un campione da una distribuzione di Poisson
+n = 100
+lambda = 10
+x = rpois(n, lambda)
+xreal = x
+
+# Istogramma del campione originale
+hist(x)
+
+# Calcola la media campionaria e la varianza campionaria del campione originale
+xbar = mean(x)
+varhat = var(x)
+
+# Inizializza vettori per memorizzare medie campionarie e varianze campionarie del bootstrap
+xbar_vec = c()
+varhat_vec = c()
+
+# Esegui il processo di bootstrap
+for (i in 1:1000) {
+  x = rpois(n, lambda)  # Campionamento bootstrap
+  xbar = mean(x)  # Calcola la media campionaria del campione di bootstrap
+  varhat = var(x)  # Calcola la varianza campionaria del campione di bootstrap
+  xbar_vec[i] = xbar  # Memorizza la media campionaria nel vettore
+  varhat_vec[i] = varhat  # Memorizza la varianza campionaria nel vettore
+}
+
+# Crea un layout a due colonne per i grafici
+par(mfrow=c(1,2))
+
+# Istogramma delle medie campionarie ottenute tramite bootstrap
+hist(xbar_vec, freq = FALSE, main = "Bootstrap Distribution of Sample Mean", xlab = "Sample Mean")
+
+# Istogramma delle varianze campionarie ottenute tramite bootstrap
+hist(varhat_vec, freq = FALSE, main = "Bootstrap Distribution of Sample Variance", xlab = "Sample Variance")
+
+```
+
+In sintesi, il codice simula un campione da una distribuzione di Poisson, calcola la media campionaria e la varianza campionaria del campione originale, quindi esegue un processo di bootstrap per ottenere le distribuzioni campionarie della media e della varianza. I risultati vengono visualizzati attraverso istogrammi in un layout a due colonne.
+
+Io vorrei che gli stimatori bootstrap avessero queste "forme".
+
+Il codice esegue un bootstrap, selezionando casualmente con sostituzione indici dall'insieme degli indici del campione originale per ottenere campioni di bootstrap. Vengono calcolate le medie campionarie (xbar_boot) e le varianze campionarie (varhat_boot) per ciascun campionamento bootstrap, e successivamente vengono mostrati in un layout a due colonne con istogrammi.
+
+```{r}
+nb = 10000  # Numero di campionamenti bootstrap
+
+# Inizializza vettori per memorizzare medie campionarie e varianze campionarie del bootstrap
+xbar_boot = c()
+varhat_boot = c()
+
+# Esegui il processo di bootstrap
+for (i in 1:nb) {
+  ind = sample(1:n, n, replace = TRUE)  # Campionamento bootstrap di indici
+  xb = x[ind]  # Seleziona il campione di bootstrap
+  
+  xbar = mean(xb)  # Calcola la media campionaria del campione di bootstrap
+  varhat = var(xb)  # Calcola la varianza campionaria del campione di bootstrap
+  
+  xbar_boot[i] = xbar  # Memorizza la media campionaria nel vettore
+  varhat_boot[i] = varhat  # Memorizza la varianza campionaria nel vettore
+}
+
+# Crea un layout a due colonne per i grafici
+par(mfrow = c(2, 2))
+
+# Istogramma delle medie campionarie ottenute tramite bootstrap (originale)
+hist(xbar_vec, freq = FALSE, main = "Bootstrap Distribution of Sample Mean (Original)", xlab = "Sample Mean")
+
+# Istogramma delle varianze campionarie ottenute tramite bootstrap (originale)
+hist(varhat_vec, freq = FALSE, main = "Bootstrap Distribution of Sample Variance (Original)", xlab = "Sample Variance")
+
+# Istogramma delle medie campionarie ottenute tramite bootstrap (bootstrap)
+hist(xbar_boot, freq = FALSE, main = "Bootstrap Distribution of Sample Mean (Bootstrap)", xlab = "Sample Mean")
+
+# Istogramma delle varianze campionarie ottenute tramite bootstrap (bootstrap)
+hist(varhat_boot, freq = FALSE, main = "Bootstrap Distribution of Sample Variance (Bootstrap)", xlab = "Sample Variance")
+
+```
+
+In sintesi, questo codice esegue il bootstrap selezionando casualmente con sostituzione indici dall'insieme degli indici del campione originale, calcola le medie campionarie e le varianze campionarie per ciascun campionamento bootstrap e visualizza i risultati attraverso istogrammi in un layout a due colonne.
